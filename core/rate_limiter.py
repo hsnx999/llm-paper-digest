@@ -21,9 +21,17 @@ class RateLimiter:
     MAX_TOKENS = 12_000
     WINDOW = 60  # seconds
 
+    _instance: RateLimiter | None = None
+
+    def __new__(cls) -> RateLimiter:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._req_times: deque[float] = deque()
+            cls._instance._tok_log: deque[tuple[float, int]] = deque()
+        return cls._instance
+
     def __init__(self) -> None:
-        self._req_times: deque[float] = deque()
-        self._tok_log: deque[tuple[float, int]] = deque()
+        pass
 
     def _clean(self, cutoff: float) -> None:
         while self._req_times and self._req_times[0] < cutoff:
@@ -58,3 +66,6 @@ class RateLimiter:
         self._req_times.append(now)
         if estimated_tokens > 0:
             self._tok_log.append((now, estimated_tokens))
+
+
+rate_limiter = RateLimiter()

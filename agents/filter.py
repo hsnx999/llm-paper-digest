@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from core.models import Paper, PipelineState
 from core.llm_provider import get_llm
-from core.rate_limiter import RateLimiter
+from core.rate_limiter import rate_limiter
 from loguru import logger
 from pydantic import BaseModel
-
-
-_rate_limiter = RateLimiter()
 
 
 class PaperScore(BaseModel):
@@ -64,7 +61,7 @@ async def filter_node(state: PipelineState) -> PipelineState:
         ]
 
         try:
-            await _rate_limiter.acquire(estimated_tokens=7000)
+            await rate_limiter.acquire(estimated_tokens=7000)
             result: RelevanceBatch = await structured.ainvoke([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Score these papers:\n{batch_repr}"},

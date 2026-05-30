@@ -1,6 +1,5 @@
 import os
 import json
-import logging
 from typing import Optional
 
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -10,7 +9,7 @@ from langchain_core.documents import Document
 from core.config import Config
 from core.models import Paper
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class VectorStore:
@@ -70,6 +69,7 @@ class VectorStore:
             self._store = FAISS.load_local(
                 self.index_path,
                 self.embeddings,
+                # Safe for local use — FAISS pickle deserialization
                 allow_dangerous_deserialization=True,
             )
             papers_path = os.path.join(self.index_path, "papers.json")

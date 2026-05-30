@@ -8,11 +8,8 @@ import os
 from core.config import Config
 from core.llm_provider import get_llm
 from core.models import Paper, PipelineState
-from core.rate_limiter import RateLimiter
+from core.rate_limiter import rate_limiter
 from loguru import logger
-
-
-_rate_limiter = RateLimiter()
 
 
 STOPWORDS = {
@@ -61,7 +58,7 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
     )
     try:
         model = get_llm()
-        await _rate_limiter.acquire(estimated_tokens=300)
+        await rate_limiter.acquire(estimated_tokens=300)
         response = await model.ainvoke([
             {"role": "system", "content": "You are a research paper digest writer."},
             {"role": "user", "content": prompt},
@@ -72,7 +69,7 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
         if "429" in err_str or "rate_limit" in err_str.lower():
             logger.warning("Rate limited on executive summary, retrying once after delay")
             await asyncio.sleep(10)
-            await _rate_limiter.acquire(estimated_tokens=300)
+            await rate_limiter.acquire(estimated_tokens=300)
             try:
                 model2 = get_llm()
                 response = await model2.ainvoke([

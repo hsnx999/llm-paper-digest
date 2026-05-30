@@ -1,15 +1,12 @@
-import logging
+from loguru import logger
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from core.config import Config
 
-logger = logging.getLogger(__name__)
-
 
 def get_llm() -> BaseChatModel:
     cfg = Config()
-    provider = cfg.LLM_PROVIDER.lower()
 
     from langchain_groq import ChatGroq
 

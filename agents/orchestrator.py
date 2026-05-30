@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
@@ -28,7 +28,6 @@ def build_graph() -> CompiledGraph:
 
     graph.set_entry_point("fetch")
 
-    graph.add_edge("fetch", "filter")
     graph.add_edge("filter", "summarise")
     graph.add_edge("summarise", "rank")
     graph.add_edge("rank", "report")
@@ -62,7 +61,7 @@ async def run_pipeline(
         "report_paths": {},
         "errors": [],
         "run_id": str(uuid4()),
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
     }
 
     db = Database()

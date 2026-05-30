@@ -4,12 +4,9 @@ import asyncio
 
 from core.llm_provider import get_llm
 from core.models import Paper, PipelineState
-from core.rate_limiter import RateLimiter
+from core.rate_limiter import rate_limiter
 from loguru import logger
 from pydantic import BaseModel
-
-
-_rate_limiter = RateLimiter()
 
 
 class PaperScores(BaseModel):
@@ -43,7 +40,7 @@ async def _score_paper(paper: Paper) -> PaperScores | None:
     llm = get_llm()
     structured_llm = llm.with_structured_output(PaperScores)
     try:
-        await _rate_limiter.acquire(estimated_tokens=700)
+        await rate_limiter.acquire(estimated_tokens=700)
         result: PaperScores = await structured_llm.ainvoke(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},

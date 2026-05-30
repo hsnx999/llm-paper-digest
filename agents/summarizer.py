@@ -4,10 +4,7 @@ from loguru import logger
 
 from core.llm_provider import get_llm
 from core.models import Paper, PaperSummary, PipelineState
-from core.rate_limiter import RateLimiter
-
-_rate_limiter = RateLimiter()
-
+from core.rate_limiter import rate_limiter
 
 def _build_user_prompt(paper: Paper) -> str:
     return (
@@ -23,7 +20,7 @@ async def _summarise_single(paper: Paper) -> Paper:
     try:
         llm = get_llm()
         structured_llm = llm.with_structured_output(PaperSummary)
-        await _rate_limiter.acquire(estimated_tokens=1000)
+        await rate_limiter.acquire(estimated_tokens=1000)
         result = await structured_llm.ainvoke([
             {
                 "role": "system",

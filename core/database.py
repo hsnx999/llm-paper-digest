@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from core.config import Config
@@ -57,7 +57,7 @@ class Database:
     def mark_seen(self, ids: list[str]) -> None:
         conn = self._get_conn()
         try:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             conn.executemany(
                 "INSERT OR IGNORE INTO seen_papers (id, first_seen_at) VALUES (?, ?)",
                 [(pid, now) for pid in ids],
