@@ -15,4 +15,4 @@ def get_llm() -> BaseChatModel:
 
     if not cfg.GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not set. Attempting to use Groq without explicit key.")
-    return ChatGroq(model=cfg.model_name, temperature=0)
+    return ChatGroq(model=cfg.model_name, temperature=0, groq_api_key=cfg.GROQ_API_KEY)

@@ -65,11 +65,11 @@ async def fetcher_node(state: PipelineState) -> PipelineState:
                     )
 
         all_ids = list(paper_map.keys())
-        unseen_ids = [pid for pid in all_ids if not Database.is_seen(pid)]
+        unseen_ids = [pid for pid in all_ids if not Database().is_seen(pid)]
         unseen_papers = [paper_map[pid] for pid in unseen_ids]
 
         if unseen_ids:
-            Database.mark_seen(unseen_ids)
+            Database().mark_seen(unseen_ids)
 
         state["raw_papers"] = unseen_papers[:total_wanted]
 
