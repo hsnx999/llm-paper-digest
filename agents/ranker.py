@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+
 from core.llm_provider import get_llm
 from core.models import Paper, PipelineState
+from core.rate_limiter import RateLimiter
 from loguru import logger
 from pydantic import BaseModel
+
+
+_rate_limiter = RateLimiter()
 
 
 class PaperScores(BaseModel):
@@ -33,9 +39,10 @@ def _compute_final_score(
 
 
 async def _score_paper(paper: Paper) -> PaperScores | None:
+    llm = get_llm()
+    structured_llm = llm.with_structured_output(PaperScores)
     try:
-        llm = get_llm()
-        structured_llm = llm.with_structured_output(PaperScores)
+        await _rate_limiter.acquire(estimated_tokens=700)
         result: PaperScores = await structured_llm.ainvoke(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -50,9 +57,28 @@ async def _score_paper(paper: Paper) -> PaperScores | None:
         )
         return result
     except Exception as exc:
-        logger.warning(
-            "Failed to score paper={} error={}", paper.title, exc
-        )
+        err_msg = str(exc)
+        if "429" in err_msg or "rate_limit" in err_msg.lower():
+            logger.warning("Rate limited, retrying once paper={}", paper.title)
+            try:
+                await asyncio.sleep(5)
+                result = await structured_llm.ainvoke(
+                    [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": _build_user_prompt(paper)},
+                    ]
+                )
+                logger.info(
+                    "Scored paper={} novelty={} impact={} (retry)",
+                    paper.title,
+                    result.novelty,
+                    result.impact,
+                )
+                return result
+            except Exception:
+                logger.warning("Failed to score paper={} after retry", paper.title)
+                return None
+        logger.warning("Failed to score paper={} error={}", paper.title, exc)
         return None
 
 

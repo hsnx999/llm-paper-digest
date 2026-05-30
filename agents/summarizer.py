@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-
 from loguru import logger
 
-from core.config import Config
 from core.llm_provider import get_llm
 from core.models import Paper, PaperSummary, PipelineState
+from core.rate_limiter import RateLimiter
+
+_rate_limiter = RateLimiter()
 
 
 def _build_user_prompt(paper: Paper) -> str:
@@ -23,6 +23,7 @@ async def _summarise_single(paper: Paper) -> Paper:
     try:
         llm = get_llm()
         structured_llm = llm.with_structured_output(PaperSummary)
+        await _rate_limiter.acquire(estimated_tokens=1000)
         result = await structured_llm.ainvoke([
             {
                 "role": "system",
@@ -45,21 +46,12 @@ async def _summarise_single(paper: Paper) -> Paper:
 async def summarizer_node(state: PipelineState) -> PipelineState:
     papers = state["filtered_papers"]
     total = len(papers)
-    batch_size = 5
     summarised: list[Paper] = []
 
-    for batch_start in range(0, total, batch_size):
-        batch = papers[batch_start : batch_start + batch_size]
-        results = await asyncio.gather(
-            *(_summarise_single(p) for p in batch)
-        )
-        summarised.extend(results)
-
-        done = len(summarised)
-        logger.info("Summarised {}/{} papers", done, total)
-
-        if Config().LLM_PROVIDER == "groq":
-            await asyncio.sleep(0.5)
+    for i, paper in enumerate(papers):
+        result = await _summarise_single(paper)
+        summarised.append(result)
+        logger.info("Summarised {}/{} papers", i + 1, total)
 
     state["summarised_papers"] = summarised
     return state

@@ -3,6 +3,7 @@ from core.config import Config
 from core.llm_provider import get_llm
 from core.database import Database
 from core.vector_store import VectorStore
+from core.rate_limiter import RateLimiter
 
 __all__ = [
     "Paper",
@@ -13,4 +14,5 @@ __all__ = [
     "get_llm",
     "Database",
     "VectorStore",
+    "RateLimiter",
 ]

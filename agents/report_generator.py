@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from core.models import Paper, PipelineState
+import asyncio
+from datetime import datetime, timedelta
+import json
+import os
+
 from core.config import Config
 from core.llm_provider import get_llm
+from core.models import Paper, PipelineState
+from core.rate_limiter import RateLimiter
 from loguru import logger
-import json
-from datetime import datetime, timedelta
-import os
+
+
+_rate_limiter = RateLimiter()
 
 
 STOPWORDS = {
@@ -44,18 +50,33 @@ def _compute_week_range(state: PipelineState) -> tuple[str, str]:
 
 
 async def _generate_executive_summary(papers: list[Paper], topics: list[str], n: int) -> str:
+    prompt = (
+        f"Summarize the key themes and trends from this week's top {n} papers on {topics}. "
+        "Write one paragraph (3-5 sentences). Focus on what's new, what's trending, and what's important."
+    )
     try:
         model = get_llm()
-        prompt = (
-            f"Summarize the key themes and trends from this week's top {n} papers on {topics}. "
-            "Write one paragraph (3-5 sentences). Focus on what's new, what's trending, and what's important."
-        )
+        await _rate_limiter.acquire(estimated_tokens=300)
         response = await model.ainvoke([
             {"role": "system", "content": "You are a research paper digest writer."},
             {"role": "user", "content": prompt},
         ])
         return response.content
     except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "rate_limit" in err_str.lower():
+            logger.warning("Rate limited on executive summary, retrying once after delay")
+            await asyncio.sleep(10)
+            await _rate_limiter.acquire(estimated_tokens=300)
+            try:
+                model2 = get_llm()
+                response = await model2.ainvoke([
+                    {"role": "system", "content": "You are a research paper digest writer."},
+                    {"role": "user", "content": prompt},
+                ])
+                return response.content
+            except Exception:
+                pass
         logger.error(f"Executive summary generation failed: {e}")
         return (
             "This week's papers cover a range of topics in the specified areas, "
