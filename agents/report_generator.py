@@ -36,6 +36,8 @@ def _compute_week_range(state: PipelineState) -> tuple[str, str]:
 
 
 async def _generate_executive_summary(papers: list[Paper], topics: list[str], n: int) -> str:
+    if not papers:
+        return "No papers were available for this week's digest."
     paper_lines = "\n".join(
         f"- {p.title}: {p.summary.one_liner if p.summary else p.abstract[:200]}"
         for p in papers
@@ -56,7 +58,7 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "rate_limit" in err_str.lower():
-            logger.warning("Rate limited on executive summary, retrying once after delay")
+            logger.warning("Executive summary rate limited, original error: {}", e)
             await asyncio.sleep(10)
             await rate_limiter.acquire(estimated_tokens=300)
             try:
@@ -68,7 +70,6 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
                 return response.content
             except Exception as retry_err:
                 logger.warning("Executive summary retry also failed: {}", retry_err)
-                e = retry_err
         logger.error(f"Executive summary generation failed: {e}")
         return (
             "This week's papers cover a range of topics in the specified areas, "
@@ -145,52 +146,68 @@ def _build_markdown_report(
 async def report_generator_node(state: PipelineState) -> PipelineState:
     cfg = Config()
     output_dir = os.path.expanduser(cfg.OUTPUT_DIR)
-
     try:
         os.makedirs(output_dir, exist_ok=True)
+
+        papers: list[Paper] = state.get("ranked_papers", [])
+        topics: list[str] = state["topics"]
+        total_fetched = len(state.get("raw_papers", []))
+
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        run_id = state["run_id"]
+        run_id_short = run_id[:8]
+
+        json_filename = f"digest_{date_str}_{run_id_short}.json"
+        md_filename = f"digest_{date_str}_{run_id_short}.md"
+
+        json_path = os.path.join(output_dir, json_filename)
+        md_path = os.path.join(output_dir, md_filename)
+
+        start_date, end_date = _compute_week_range(state)
+        filtered_papers = state.get("filtered_papers", [])
+        trending = _get_trending_topics(filtered_papers or papers)
+        executive_summary = await _generate_executive_summary(papers, topics, len(papers))
+
+        json_data = _build_json_report(state, papers)
+        md_content = _build_markdown_report(
+            state, papers, start_date, end_date, total_fetched, executive_summary, trending,
+        )
+
+        report_paths = {}
+        try:
+            with open(json_path, "w") as f:
+                json.dump(json_data, f, indent=2)
+            report_paths["json"] = json_path
+            logger.info(f"JSON report written to {json_path}")
+        except Exception as e:
+            logger.error(f"Failed to write JSON report: {e}")
+
+        try:
+            with open(md_path, "w") as f:
+                f.write(md_content)
+            report_paths["markdown"] = md_path
+            logger.info(f"Markdown report written to {md_path}")
+        except Exception as e:
+            logger.error(f"Failed to write Markdown report: {e}")
+
+        if state.get("db") and report_paths:
+            from core.models import DigestRun
+            state["db"].update_run(DigestRun(
+                run_id=state["run_id"],
+                started_at=state["started_at"],
+                finished_at=datetime.now(timezone.utc),
+                paper_count=len(papers),
+                top_n=state.get("top_n", Config().TOP_N_PAPERS),
+                topics=state["topics"],
+                categories=state["categories"],
+                json_path=report_paths.get("json", ""),
+                md_path=report_paths.get("markdown", ""),
+                status="success",
+            ))
+
+        state["report_paths"] = report_paths
     except Exception as e:
-        logger.error(f"Failed to create output directory {output_dir}: {e}")
-
-    papers: list[Paper] = state.get("ranked_papers", [])
-    topics: list[str] = state["topics"]
-    total_fetched = len(state.get("raw_papers", []))
-
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    run_id = state["run_id"]
-    run_id_short = run_id[:8]
-
-    json_filename = f"digest_{date_str}_{run_id_short}.json"
-    md_filename = f"digest_{date_str}_{run_id_short}.md"
-
-    json_path = os.path.join(output_dir, json_filename)
-    md_path = os.path.join(output_dir, md_filename)
-
-    start_date, end_date = _compute_week_range(state)
-    filtered_papers = state.get("filtered_papers", [])
-    trending = _get_trending_topics(filtered_papers or papers)
-    executive_summary = await _generate_executive_summary(papers, topics, len(papers))
-
-    json_data = _build_json_report(state, papers)
-    md_content = _build_markdown_report(
-        state, papers, start_date, end_date, total_fetched, executive_summary, trending,
-    )
-
-    report_paths = {}
-    try:
-        with open(json_path, "w") as f:
-            json.dump(json_data, f, indent=2)
-        report_paths["json"] = json_path
-        logger.info(f"JSON report written to {json_path}")
-    except Exception as e:
-        logger.error(f"Failed to write JSON report: {e}")
-
-    try:
-        with open(md_path, "w") as f:
-            f.write(md_content)
-        report_paths["markdown"] = md_path
-        logger.info(f"Markdown report written to {md_path}")
-    except Exception as e:
-        logger.error(f"Failed to write Markdown report: {e}")
-
-    state["report_paths"] = report_paths
+        logger.error("Report generator node failed: {}", e)
+        state["errors"].append(f"report_generator_node: {e}")
+        state["report_paths"] = state.get("report_paths", {})
     return state

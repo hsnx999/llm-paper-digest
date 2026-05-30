@@ -16,6 +16,15 @@ from core.database import Database
 from core.models import DigestRun, PipelineState
 from loguru import logger
 
+_compiled_graph: CompiledGraph | None = None
+
+
+def _get_graph() -> CompiledGraph:
+    global _compiled_graph
+    if _compiled_graph is None:
+        _compiled_graph = build_graph()
+    return _compiled_graph
+
 
 def build_graph() -> CompiledGraph:
     graph = StateGraph(PipelineState)
@@ -85,7 +94,8 @@ async def run_pipeline(
     logger.info(f"Topics: {initial_state['topics']}")
     logger.info(f"Categories: {initial_state['categories']}")
 
-    graph = build_graph()
+    graph = _get_graph()
+    result = initial_state
     try:
         result = await graph.ainvoke(initial_state)
     except Exception as e:
@@ -96,22 +106,26 @@ async def run_pipeline(
             "ranked_papers": [],
             "report_paths": {},
         }
-
-    ranked = result.get("ranked_papers", [])
-    paths = result.get("report_paths", {})
-
-    db.update_run(DigestRun(
-        run_id=result.get("run_id", initial_state.get("run_id", "unknown")),
-        started_at=result.get("started_at", initial_state.get("started_at", datetime.now(timezone.utc))),
-        finished_at=datetime.now(timezone.utc),
-        paper_count=len(ranked),
-        top_n=result.get("top_n", initial_state.get("top_n", 0)),
-        topics=result.get("topics", initial_state.get("topics", [])),
-        categories=result.get("categories", initial_state.get("categories", [])),
-        json_path=paths.get("json", ""),
-        md_path=paths.get("markdown", ""),
-        status="success" if not result.get("errors") else "failed",
-    ))
+    finally:
+        ranked = result.get("ranked_papers", [])
+        paths = result.get("report_paths", {})
+        try:
+            db.update_run(DigestRun(
+                run_id=result.get("run_id", initial_state.get("run_id", "unknown")),
+                started_at=result.get("started_at", initial_state.get("started_at", datetime.now(timezone.utc))),
+                finished_at=datetime.now(timezone.utc),
+                paper_count=len(ranked),
+                top_n=result.get("top_n", initial_state.get("top_n", 0)),
+                topics=result.get("topics", initial_state.get("topics", [])),
+                categories=result.get("categories", initial_state.get("categories", [])),
+                json_path=paths.get("json", ""),
+                md_path=paths.get("markdown", ""),
+                status="success" if not result.get("errors") else "failed",
+            ))
+        except Exception as e:
+            logger.error("Failed to persist run result: {}", e)
+        finally:
+            db.close()
 
     n_fetched = len(result.get("raw_papers", []))
     n_ranked = len(ranked)

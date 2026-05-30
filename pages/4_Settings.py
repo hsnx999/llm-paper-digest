@@ -74,6 +74,16 @@ with st.form("settings_form"):
             index=default_log_idx,
         )
 
+    output_dir = st.text_input(
+        "Output Directory",
+        value=config.OUTPUT_DIR,
+    )
+
+    data_dir = st.text_input(
+        "Data Directory",
+        value=config.DATA_DIR,
+    )
+
     saved = st.form_submit_button("💾 Save Settings", use_container_width=True, type="primary")
 
 if saved:
@@ -86,11 +96,16 @@ if saved:
         "DAYS_LOOKBACK": str(days_lookback),
         "PAPERS_PER_RUN": str(papers_per_run),
         "LOG_LEVEL": log_level,
+        "OUTPUT_DIR": output_dir,
+        "DATA_DIR": data_dir,
     }
-    for key, value in pairs.items():
-        set_key(".env", key, value)
-    st.success("Settings saved!")
-    st.rerun()
+    try:
+        for key, value in pairs.items():
+            set_key(".env", key, value)
+        st.success("Settings saved!")
+        st.rerun()
+    except (OSError, PermissionError) as e:
+        st.error(f"Failed to save settings: {e}")
 
 st.markdown("---")
 st.markdown('<p class="section-title">Current Effective Configuration</p>', unsafe_allow_html=True)

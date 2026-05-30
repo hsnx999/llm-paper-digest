@@ -1,11 +1,10 @@
 import typer
-import asyncio
+from asyncio import run as async_run
 import os
 from agents.orchestrator import run_pipeline
 from core.database import Database
 from core.config import Config
 from loguru import logger
-import sys
 
 app = typer.Typer()
 
@@ -21,7 +20,7 @@ def run(
     cats_list = [c.strip() for c in categories.split(",")] if categories else None
 
     try:
-        result = asyncio.run(run_pipeline(
+        result = async_run(run_pipeline(
             topics=topics_list,
             categories=cats_list,
             days_lookback=days,
@@ -39,7 +38,7 @@ def run(
         logger.error(f"Pipeline completed with {len(result['errors'])} errors")
         for err in result["errors"]:
             logger.error(f"  - {err}")
-        sys.exit(1)
+        raise typer.Exit(1)
 
     logger.info("Pipeline completed successfully!")
     paths = result.get("report_paths", {})

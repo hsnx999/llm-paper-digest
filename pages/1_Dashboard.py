@@ -29,9 +29,13 @@ def load_latest_digest():
     if not files:
         return None
     latest = max(files, key=os.path.getmtime)
-    with open(latest) as f:
-        data = json.load(f)
-    return data
+    try:
+        with open(latest) as f:
+            data = json.load(f)
+        return data
+    except (json.JSONDecodeError, OSError) as e:
+        st.error(f"Failed to load report file {latest}: {e}")
+        return None
 
 
 def papers_from_digest(data) -> list[Paper]:
@@ -113,8 +117,7 @@ else:
 
 st.markdown("### 📊 Trends")
 
-db_for_charts = Database()
-all_runs = db_for_charts.get_all_runs()
+all_runs = db.get_all_runs()
 if len(all_runs) >= 2:
     chart_data = [
         {"Date": r.started_at.strftime("%Y-%m-%d"), "Papers": r.paper_count}

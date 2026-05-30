@@ -22,20 +22,10 @@ class RateLimiter:
     MAX_TOKENS = 12_000
     WINDOW = 60  # seconds
 
-    _instance: RateLimiter | None = None
-    _singleton_lock: threading.Lock = threading.Lock()
-
-    def __new__(cls) -> RateLimiter:
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._req_times: deque[float] = deque()
-                cls._instance._tok_log: deque[tuple[float, int]] = deque()
-                cls._instance._lock: asyncio.Lock = asyncio.Lock()
-        return cls._instance
-
     def __init__(self) -> None:
-        pass
+        self._req_times: deque[float] = deque()
+        self._tok_log: deque[tuple[float, int]] = deque()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     def _clean(self, cutoff: float) -> None:
         while self._req_times and self._req_times[0] < cutoff:

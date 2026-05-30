@@ -1,8 +1,6 @@
-import json
 import os
 import streamlit as st
 from core.database import Database
-from core.config import Config
 
 st.set_page_config(layout="wide")
 
@@ -14,7 +12,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 db = Database()
-config = Config()
 
 st.markdown(
     '<p class="history-header">📜 Run History</p>',
@@ -72,29 +69,35 @@ for r in runs:
 
         with col1:
             if r.json_path and os.path.exists(r.json_path):
-                with open(r.json_path) as f:
-                    json_content = f.read()
-                st.download_button(
-                    "📥 View JSON",
-                    data=json_content,
-                    file_name=os.path.basename(r.json_path),
-                    mime="application/json",
-                    use_container_width=True,
-                )
+                try:
+                    with open(r.json_path) as f:
+                        json_content = f.read()
+                    st.download_button(
+                        "📥 View JSON",
+                        data=json_content,
+                        file_name=os.path.basename(r.json_path),
+                        mime="application/json",
+                        use_container_width=True,
+                    )
+                except OSError:
+                    st.button("📥 View JSON", disabled=True, use_container_width=True)
             else:
                 st.button("📥 View JSON", disabled=True, use_container_width=True)
 
         with col2:
             if r.md_path and os.path.exists(r.md_path):
-                with open(r.md_path) as f:
-                    md_content = f.read()
-                st.download_button(
-                    "📥 View MD",
-                    data=md_content,
-                    file_name=os.path.basename(r.md_path),
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
+                try:
+                    with open(r.md_path) as f:
+                        md_content = f.read()
+                    st.download_button(
+                        "📥 View MD",
+                        data=md_content,
+                        file_name=os.path.basename(r.md_path),
+                        mime="text/markdown",
+                        use_container_width=True,
+                    )
+                except OSError:
+                    st.button("📥 View MD", disabled=True, use_container_width=True)
             else:
                 st.button("📥 View MD", disabled=True, use_container_width=True)
 
@@ -102,10 +105,19 @@ for r in runs:
             with st.popover(f"🗑 Delete", use_container_width=True):
                 st.warning(f"Delete run {r.run_id[:8]}?")
                 if st.button("Yes, delete", key=f"confirm_del_{r.run_id}", use_container_width=True):
-                    if r.json_path and os.path.exists(r.json_path):
-                        os.remove(r.json_path)
-                    if r.md_path and os.path.exists(r.md_path):
-                        os.remove(r.md_path)
-                    db.delete_run(r.run_id)
-                    st.success(f"Run {r.run_id[:8]} deleted")
-                    st.rerun()
+                    try:
+                        if r.json_path and os.path.exists(r.json_path):
+                            os.remove(r.json_path)
+                    except OSError as e:
+                        st.warning(f"Could not delete JSON report: {e}")
+                    try:
+                        if r.md_path and os.path.exists(r.md_path):
+                            os.remove(r.md_path)
+                    except OSError as e:
+                        st.warning(f"Could not delete MD report: {e}")
+                    try:
+                        db.delete_run(r.run_id)
+                        st.success(f"Run {r.run_id[:8]} deleted")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to delete run: {e}")

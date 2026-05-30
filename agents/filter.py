@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from core.models import Paper, PipelineState
 from core.llm_provider import get_llm
 from core.rate_limiter import rate_limiter
@@ -67,12 +69,30 @@ async def filter_node(state: PipelineState) -> PipelineState:
                 {"role": "user", "content": f"Score these papers:\n{batch_repr}"},
             ])
         except Exception as e:
-            logger.error(f"LLM batch scoring failed for batch starting at index {i}: {e}")
-            state.setdefault("errors", []).append(f"filter: batch {i} scoring failed: {e}")
-            for paper in batch:
-                paper.relevance_score = 0.0
-                scored_papers.append(paper)
-            continue
+            err_str = str(e)
+            if "429" in err_str or "rate_limit" in err_str.lower():
+                logger.warning("Rate limited on filter batch, retrying once after delay")
+                await asyncio.sleep(5)
+                try:
+                    await rate_limiter.acquire(estimated_tokens=3500)
+                    result = await structured.ainvoke([
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Score these papers:\n{batch_repr}"},
+                    ])
+                except Exception as retry_err:
+                    logger.error(f"Filter batch scoring retry also failed: {retry_err}")
+                    state["errors"].append(f"filter: batch {i} scoring failed after retry: {retry_err}")
+                    for paper in batch:
+                        paper.relevance_score = 5.0
+                        scored_papers.append(paper)
+                    continue
+            else:
+                logger.error(f"LLM batch scoring failed for batch starting at index {i}: {e}")
+                state["errors"].append(f"filter: batch {i} scoring failed: {e}")
+                for paper in batch:
+                    paper.relevance_score = 5.0
+                    scored_papers.append(paper)
+                continue
 
         id_to_score: dict[str, PaperScore] = {}
         for s in result.scores:
@@ -84,7 +104,7 @@ async def filter_node(state: PipelineState) -> PipelineState:
         if len(id_to_score) != len(batch):
             missing = [p.id for p in batch if p.id not in id_to_score]
             logger.warning(f"LLM returned {len(id_to_score)} scores for {len(batch)} papers; missing: {missing}")
-            state.setdefault("errors", []).append(
+            state["errors"].append(
                 f"filter: LLM returned {len(id_to_score)}/{len(batch)} scores"
             )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 
 from loguru import logger
 
@@ -39,7 +40,8 @@ async def _summarise_single(paper: Paper, structured_llm) -> Paper:
         if "429" in err_msg or "rate_limit" in err_msg.lower():
             logger.warning("Rate limited, retrying once paper='{}'", paper.title)
             try:
-                await asyncio.sleep(5)
+                await asyncio.sleep(random.uniform(5, 10))
+                await rate_limiter.acquire(estimated_tokens=1000)
                 result = await structured_llm.ainvoke([
                     {
                         "role": "system",
@@ -63,29 +65,38 @@ async def _summarise_single(paper: Paper, structured_llm) -> Paper:
 
 
 async def summarizer_node(state: PipelineState) -> PipelineState:
-    papers = state["filtered_papers"]
-    total = len(papers)
-    batch_size = 5
-    summarised: list[Paper] = []
+    try:
+        papers = state["filtered_papers"]
+        total = len(papers)
+        batch_size = 5
+        summarised: list[Paper] = []
 
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(PaperSummary)
+        llm = get_llm()
+        structured_llm = llm.with_structured_output(PaperSummary)
 
-    for batch_start in range(0, total, batch_size):
-        batch = papers[batch_start : batch_start + batch_size]
-        results = await asyncio.gather(
-            *(_summarise_single(p, structured_llm) for p in batch),
-            return_exceptions=True,
-        )
-        for paper, result in zip(batch, results):
-            if isinstance(result, BaseException):
-                logger.warning("Summarize failed for '{}': {}", paper.title, result)
-                paper.summary = None
-                summarised.append(paper)
-            else:
-                summarised.append(result)
-        done = len(summarised)
-        logger.info("Summarised {}/{} papers", done, total)
+        for batch_start in range(0, total, batch_size):
+            batch = papers[batch_start : batch_start + batch_size]
+            results = await asyncio.gather(
+                *(_summarise_single(p, structured_llm) for p in batch),
+                return_exceptions=True,
+            )
+            for paper, result in zip(batch, results):
+                if isinstance(result, Exception):
+                    logger.warning("Summarize failed for '{}': {}", paper.title, result)
+                    state["errors"].append(f"summarizer: failed for {paper.title}: {result}")
+                    paper.summary = None
+                    summarised.append(paper)
+                elif paper.summary is None:
+                    state["errors"].append(f"summarizer: summarisation failed for {paper.title}")
+                    summarised.append(paper)
+                else:
+                    summarised.append(result)
+            done = len(summarised)
+            logger.info("Summarised {}/{} papers", done, total)
 
-    state["summarised_papers"] = summarised
+        state["summarised_papers"] = summarised
+    except Exception as e:
+        logger.error("Summarizer node failed: {}", e)
+        state["errors"].append(f"summarizer_node: {e}")
+        state["summarised_papers"] = state.get("summarised_papers", [])
     return state

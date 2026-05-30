@@ -55,7 +55,7 @@ python main.py export <run_id>
 ## Environment Variables
 
 | Variable | Default | Description |
-|---|---|---|---|
+|---|---|---|
 | `GROQ_API_KEY` | — | Groq API key |
 | `DEFAULT_TOPICS` | `large language models,agents,RAG,reasoning,multimodal` | Topics used for relevance filtering |
 | `DEFAULT_CATEGORIES` | `cs.AI,cs.LG,cs.CL,cs.CV` | ArXiv categories to fetch from |
@@ -120,7 +120,6 @@ jobs:
       - name: Run pipeline
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          LLM_PROVIDER: groq
         run: python main.py run
       - name: Upload report
         uses: actions/upload-artifact@v4

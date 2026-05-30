@@ -94,14 +94,15 @@ async def ranker_node(state: PipelineState) -> PipelineState:
                 scores.impact = max(0.0, min(10.0, scores.impact))
                 paper.novelty_score = scores.novelty
                 paper.impact_score = scores.impact
+                clamped_relevance = max(0.0, min(10.0, paper.relevance_score))
                 final_score = _compute_final_score(
-                    paper.relevance_score, scores.novelty, scores.impact
+                    clamped_relevance, scores.novelty, scores.impact
                 )
                 paper.final_score = final_score
                 ranked.append(paper)
             else:
                 logger.warning("Excluding paper '{}' from ranking (scoring failed)", paper.title)
-                state.setdefault("errors", []).append(f"ranker: scoring failed for {paper.title}")
+                state["errors"].append(f"ranker: scoring failed for {paper.title}")
                 continue
 
         ranked.sort(key=lambda p: p.final_score, reverse=True)
@@ -117,6 +118,6 @@ async def ranker_node(state: PipelineState) -> PipelineState:
         state["ranked_papers"] = ranked
     except Exception as e:
         logger.error("Ranker node failed: {}", e)
-        state.setdefault("errors", []).append(f"ranker_node: {e}")
+        state["errors"].append(f"ranker_node: {e}")
         state["ranked_papers"] = state.get("ranked_papers", [])
     return state
