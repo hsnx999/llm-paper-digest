@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from loguru import logger
 
 from core.llm_provider import get_llm
@@ -43,12 +45,17 @@ async def _summarise_single(paper: Paper) -> Paper:
 async def summarizer_node(state: PipelineState) -> PipelineState:
     papers = state["filtered_papers"]
     total = len(papers)
+    batch_size = 5
     summarised: list[Paper] = []
 
-    for i, paper in enumerate(papers):
-        result = await _summarise_single(paper)
-        summarised.append(result)
-        logger.info("Summarised {}/{} papers", i + 1, total)
+    for batch_start in range(0, total, batch_size):
+        batch = papers[batch_start : batch_start + batch_size]
+        results = await asyncio.gather(
+            *(_summarise_single(p) for p in batch)
+        )
+        summarised.extend(results)
+        done = len(summarised)
+        logger.info("Summarised {}/{} papers", done, total)
 
     state["summarised_papers"] = summarised
     return state

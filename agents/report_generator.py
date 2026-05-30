@@ -11,21 +11,10 @@ from core.models import Paper, PipelineState
 from core.rate_limiter import rate_limiter
 from loguru import logger
 
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-STOPWORDS = {
-    "a", "an", "the", "and", "or", "but", "if", "because", "as", "what",
-    "which", "this", "that", "these", "those", "then", "just", "so", "than",
-    "such", "both", "through", "about", "for", "is", "of", "while", "during",
-    "to", "from", "in", "on", "by", "at", "with", "without", "into", "via",
-    "using", "based", "new", "novel", "approach", "method", "model", "our",
-    "we", "it", "its", "are", "was", "were", "been", "be", "have", "has",
-    "had", "do", "does", "did", "will", "would", "can", "could", "may",
-    "might", "shall", "should", "not", "no", "nor", "only", "own", "same",
-    "very", "too", "also", "how", "when", "where", "why", "who", "whom",
-    "all", "any", "each", "few", "more", "most", "other", "some", "over",
-    "under", "above", "below", "up", "down", "out", "off", "again", "further",
-    "once", "here", "there", "every", "between", "after", "before",
-}
+
+STOPWORDS = ENGLISH_STOP_WORDS
 
 
 def _get_trending_topics(papers: list[Paper], top_n: int = 10) -> list[tuple[str, int]]:
@@ -176,7 +165,8 @@ async def report_generator_node(state: PipelineState) -> PipelineState:
     md_path = os.path.join(output_dir, md_filename)
 
     start_date, end_date = _compute_week_range(state)
-    trending = _get_trending_topics(papers)
+    filtered_papers = state.get("filtered_papers", [])
+    trending = _get_trending_topics(filtered_papers or papers)
     executive_summary = await _generate_executive_summary(papers, topics, len(papers))
 
     json_data = _build_json_report(state, papers)

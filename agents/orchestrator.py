@@ -49,6 +49,11 @@ async def run_pipeline(
 ) -> PipelineState:
     config = Config()
 
+    if not config.GROQ_API_KEY:
+        raise ValueError(
+            "GROQ_API_KEY is not set. Create a .env file with GROQ_API_KEY=gsk_..."
+        )
+
     initial_state: PipelineState = {
         "topics": topics or config.effective_topics,
         "categories": categories or config.effective_categories,
@@ -62,9 +67,10 @@ async def run_pipeline(
         "errors": [],
         "run_id": str(uuid4()),
         "started_at": datetime.now(timezone.utc),
+        "db": Database(),
     }
 
-    db = Database()
+    db = initial_state["db"]
     run_record = DigestRun(
         run_id=initial_state["run_id"],
         started_at=initial_state["started_at"],
@@ -88,7 +94,7 @@ async def run_pipeline(
     db.update_run(DigestRun(
         run_id=result["run_id"],
         started_at=result["started_at"],
-        finished_at=datetime.utcnow(),
+        finished_at=datetime.now(timezone.utc),
         paper_count=len(ranked),
         top_n=result["top_n"],
         topics=result["topics"],

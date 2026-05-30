@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import TypedDict, Optional, Literal
+from typing import TypedDict, Optional, Literal, Any
 from datetime import datetime
 
 
@@ -41,6 +41,7 @@ class PipelineState(TypedDict):
     errors: list[str]
     run_id: str
     started_at: datetime
+    db: Optional[Any]
 
 
 class DigestRun(BaseModel):
