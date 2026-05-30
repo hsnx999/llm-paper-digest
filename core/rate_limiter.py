@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections import deque
 
@@ -22,12 +23,15 @@ class RateLimiter:
     WINDOW = 60  # seconds
 
     _instance: RateLimiter | None = None
+    _singleton_lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> RateLimiter:
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._req_times: deque[float] = deque()
-            cls._instance._tok_log: deque[tuple[float, int]] = deque()
+        with cls._singleton_lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._req_times: deque[float] = deque()
+                cls._instance._tok_log: deque[tuple[float, int]] = deque()
+                cls._instance._lock: asyncio.Lock = asyncio.Lock()
         return cls._instance
 
     def __init__(self) -> None:
@@ -40,32 +44,33 @@ class RateLimiter:
             self._tok_log.popleft()
 
     async def acquire(self, estimated_tokens: int = 0) -> None:
-        now = time.monotonic()
-        cutoff = now - self.WINDOW
-        self._clean(cutoff)
+        async with self._lock:
+            now = time.monotonic()
+            cutoff = now - self.WINDOW
+            self._clean(cutoff)
 
-        while len(self._req_times) >= self.MAX_REQUESTS:
-            wait = self._req_times[0] + self.WINDOW - time.monotonic()
-            if wait > 0:
-                logger.info(f"Rate limit: waiting {wait:.1f}s for request slot")
-                await asyncio.sleep(wait)
-            self._clean(time.monotonic() - self.WINDOW)
-
-        while estimated_tokens > 0:
-            self._clean(time.monotonic() - self.WINDOW)
-            used = sum(t for _, t in self._tok_log)
-            if used + estimated_tokens <= self.MAX_TOKENS:
-                break
-            if self._tok_log:
-                wait = self._tok_log[0][0] + self.WINDOW - time.monotonic()
+            while len(self._req_times) >= self.MAX_REQUESTS:
+                wait = self._req_times[0] + self.WINDOW - time.monotonic()
                 if wait > 0:
-                    logger.info(f"Rate limit: waiting {wait:.1f}s for token budget")
+                    logger.info(f"Rate limit: waiting {wait:.1f}s for request slot")
                     await asyncio.sleep(wait)
+                self._clean(time.monotonic() - self.WINDOW)
 
-        now = time.monotonic()
-        self._req_times.append(now)
-        if estimated_tokens > 0:
-            self._tok_log.append((now, estimated_tokens))
+            while estimated_tokens > 0:
+                self._clean(time.monotonic() - self.WINDOW)
+                used = sum(t for _, t in self._tok_log)
+                if used + estimated_tokens <= self.MAX_TOKENS:
+                    break
+                if self._tok_log:
+                    wait = self._tok_log[0][0] + self.WINDOW - time.monotonic()
+                    if wait > 0:
+                        logger.info(f"Rate limit: waiting {wait:.1f}s for token budget")
+                        await asyncio.sleep(wait)
+
+            now = time.monotonic()
+            self._req_times.append(now)
+            if estimated_tokens > 0:
+                self._tok_log.append((now, estimated_tokens))
 
 
 rate_limiter = RateLimiter()

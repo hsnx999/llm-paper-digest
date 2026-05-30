@@ -28,6 +28,7 @@ Thumbs.db
 AGENTS.md
 
 # OpenCode
+opencode.json
 .opencode/
 
 # Virtual environment

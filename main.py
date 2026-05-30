@@ -20,12 +20,20 @@ def run(
     topics_list = [t.strip() for t in topics.split(",")] if topics else None
     cats_list = [c.strip() for c in categories.split(",")] if categories else None
 
-    result = asyncio.run(run_pipeline(
-        topics=topics_list,
-        categories=cats_list,
-        days_lookback=days,
-        top_n=top_n,
-    ))
+    try:
+        result = asyncio.run(run_pipeline(
+            topics=topics_list,
+            categories=cats_list,
+            days_lookback=days,
+            top_n=top_n,
+        ))
+    except ValueError as e:
+        typer.echo(f"Configuration error: {e}", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        logger.exception("Pipeline crashed unexpectedly")
+        typer.echo(f"Unexpected error: {e}", err=True)
+        raise typer.Exit(1)
 
     if result.get("errors"):
         logger.error(f"Pipeline completed with {len(result['errors'])} errors")

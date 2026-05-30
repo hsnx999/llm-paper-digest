@@ -60,6 +60,7 @@ async def _score_paper(paper: Paper) -> PaperScores | None:
             logger.warning("Rate limited, retrying once paper={}", paper.title)
             try:
                 await asyncio.sleep(5)
+                await rate_limiter.acquire(estimated_tokens=700)
                 result = await structured_llm.ainvoke(
                     [
                         {"role": "system", "content": SYSTEM_PROMPT},
@@ -73,40 +74,49 @@ async def _score_paper(paper: Paper) -> PaperScores | None:
                     result.impact,
                 )
                 return result
-            except Exception:
-                logger.warning("Failed to score paper={} after retry", paper.title)
+            except Exception as retry_exc:
+                logger.warning("Failed to score paper={} after retry: {}", paper.title, retry_exc)
                 return None
         logger.warning("Failed to score paper={} error={}", paper.title, exc)
         return None
 
 
 async def ranker_node(state: PipelineState) -> PipelineState:
-    papers: list[Paper] = state["summarised_papers"]
-    top_n: int = state["top_n"]
+    try:
+        papers: list[Paper] = state.get("summarised_papers", [])
+        top_n: int = state.get("top_n", 10)
 
-    ranked: list[Paper] = []
-    for paper in papers:
-        scores = await _score_paper(paper)
-        if scores is not None:
-            paper.novelty_score = scores.novelty
-            paper.impact_score = scores.impact
-            final_score = _compute_final_score(
-                paper.relevance_score, scores.novelty, scores.impact
-            )
-        else:
-            final_score = paper.relevance_score * 0.4
-        paper.final_score = final_score
-        ranked.append(paper)
+        ranked: list[Paper] = []
+        for paper in papers:
+            scores = await _score_paper(paper)
+            if scores is not None:
+                scores.novelty = max(0.0, min(10.0, scores.novelty))
+                scores.impact = max(0.0, min(10.0, scores.impact))
+                paper.novelty_score = scores.novelty
+                paper.impact_score = scores.impact
+                final_score = _compute_final_score(
+                    paper.relevance_score, scores.novelty, scores.impact
+                )
+                paper.final_score = final_score
+                ranked.append(paper)
+            else:
+                logger.warning("Excluding paper '{}' from ranking (scoring failed)", paper.title)
+                state.setdefault("errors", []).append(f"ranker: scoring failed for {paper.title}")
+                continue
 
-    ranked.sort(key=lambda p: p.final_score, reverse=True)
-    for idx, paper in enumerate(ranked, start=1):
-        paper.rank = idx
+        ranked.sort(key=lambda p: p.final_score, reverse=True)
+        for idx, paper in enumerate(ranked, start=1):
+            paper.rank = idx
 
-    ranked = ranked[:top_n]
+        ranked = ranked[:top_n]
 
-    logger.info(
-        "Ranked {} papers, kept top {}", len(papers), len(ranked)
-    )
+        logger.info(
+            "Ranked {} papers, kept top {}", len(papers), len(ranked)
+        )
 
-    state["ranked_papers"] = ranked
+        state["ranked_papers"] = ranked
+    except Exception as e:
+        logger.error("Ranker node failed: {}", e)
+        state.setdefault("errors", []).append(f"ranker_node: {e}")
+        state["ranked_papers"] = state.get("ranked_papers", [])
     return state

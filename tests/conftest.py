@@ -19,10 +19,7 @@ def db(temp_db_dir):
     """Create a Database instance backed by a temp file."""
     db = Database()
     conn = db._get_conn()
-    try:
-        conn.execute("DELETE FROM seen_papers")
-        conn.execute("DELETE FROM digest_runs")
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute("DELETE FROM seen_papers")
+    conn.execute("DELETE FROM digest_runs")
+    conn.commit()
     return db

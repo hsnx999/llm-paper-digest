@@ -66,10 +66,12 @@ with st.form("settings_form"):
             value=config.PAPERS_PER_RUN,
         )
     with col4:
+        log_level_options = ["DEBUG", "INFO", "WARNING", "ERROR"]
+        default_log_idx = log_level_options.index(config.LOG_LEVEL) if config.LOG_LEVEL in log_level_options else 1
         log_level = st.selectbox(
             "Log Level",
-            options=["DEBUG", "INFO", "WARNING", "ERROR"],
-            index=["DEBUG", "INFO", "WARNING", "ERROR"].index(config.LOG_LEVEL),
+            options=log_level_options,
+            index=default_log_idx,
         )
 
     saved = st.form_submit_button("💾 Save Settings", use_container_width=True, type="primary")

@@ -30,6 +30,8 @@ The pipeline is composed of five stages chained via a LangGraph StateGraph:
 4. **Ranker** — Ranks papers by importance using an LLM.
 5. **Report Generator** — Produces a final JSON digest and a formatted Markdown report.
 
+All LLM calls (filter, summarise, rank) are rate-limited by a shared sliding-window limiter (30 req/min, 12K tokens/min) in `core/rate_limiter.py` to stay within Groq's free-tier constraints.
+
 State is persisted in SQLite, and results are viewable through a Streamlit UI.
 
 ## Quick Start
@@ -53,16 +55,13 @@ python main.py export <run_id>
 ## Environment Variables
 
 | Variable | Default | Description |
-|---|---|---|
-| `LLM_PROVIDER` | `groq` | LLM backend (only `groq` is supported) |
+|---|---|---|---|
 | `GROQ_API_KEY` | — | Groq API key |
-| `DEFAULT_CATEGORIES` | `cs.AI,cs.LG,cs.CL,cs.CV` | ArXiv categories to fetch from |
 | `DEFAULT_TOPICS` | `large language models,agents,RAG,reasoning,multimodal` | Topics used for relevance filtering |
-| `PAPERS_PER_RUN` | `60` | Max papers fetched per run |
+| `DEFAULT_CATEGORIES` | `cs.AI,cs.LG,cs.CL,cs.CV` | ArXiv categories to fetch from |
 | `TOP_N_PAPERS` | `10` | Number of top-ranked papers in the final report |
 | `DAYS_LOOKBACK` | `7` | How far back to look for new papers |
-| `OUTPUT_DIR` | `./output` | Directory for generated reports |
-| `DATA_DIR` | `./data` | Directory for database and vector store |
+| `PAPERS_PER_RUN` | `60` | Max papers fetched per run |
 | `LOG_LEVEL` | `INFO` | Logging verbosity |
 
 ## Free-Tier Guide
@@ -73,7 +72,6 @@ This project uses **Groq's free inference endpoint** — no OpenAI key needed. A
 2. Generate an API key and set it in `.env`:
 
 ```
-LLM_PROVIDER=groq
 GROQ_API_KEY=gsk_your_actual_key
 ```
 
@@ -159,20 +157,33 @@ llm-paper-digest/
 ├── README.md
 ├── agents/
 │   ├── __init__.py
-│   ├── orchestrator.py      # LangGraph pipeline
+│   ├── orchestrator.py      # LangGraph pipeline wiring
 │   ├── fetcher.py           # ArXiv paper fetching
 │   ├── filter.py            # LLM-based relevance filter
 │   ├── summarizer.py        # LLM-based summarisation
-│   └── ranker.py            # LLM-based importance ranking
+│   ├── ranker.py            # LLM-based importance ranking
+│   └── report_generator.py  # JSON + Markdown report output
 ├── core/
 │   ├── __init__.py
 │   ├── config.py            # Pydantic settings
 │   ├── models.py            # Data models
 │   ├── database.py          # SQLite persistence
 │   ├── llm_provider.py      # LLM client wrapper
+│   ├── rate_limiter.py      # 30 req/min + 12K TPM sliding window
 │   └── vector_store.py      # FAISS + embeddings
 ├── pages/
-│   └── __init__.py
+│   ├── __init__.py
+│   ├── 1_Dashboard.py       # Streamlit dashboard
+│   ├── 2_Run_Pipeline.py    # Run pipeline UI
+│   ├── 3_History.py         # Past runs browser
+│   └── 4_Settings.py        # Settings page
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_config.py
+│   ├── test_database.py
+│   ├── test_pipeline.py
+│   └── test_rate_limiter.py
 ├── output/                  # Generated reports (gitignored)
 └── data/                    # SQLite DB, FAISS index (gitignored)
 ```

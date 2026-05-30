@@ -36,7 +36,13 @@ def load_latest_digest():
 
 def papers_from_digest(data) -> list[Paper]:
     raw = data if isinstance(data, list) else data.get("papers", data.get("ranked_papers", []))
-    return [Paper(**p) if not isinstance(p, Paper) else p for p in raw]
+    papers = []
+    for p in raw:
+        try:
+            papers.append(Paper(**p) if not isinstance(p, Paper) else p)
+        except Exception:
+            continue
+    return papers
 
 
 db = Database()

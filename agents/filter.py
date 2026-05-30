@@ -61,24 +61,39 @@ async def filter_node(state: PipelineState) -> PipelineState:
         ]
 
         try:
-            await rate_limiter.acquire(estimated_tokens=7000)
+            await rate_limiter.acquire(estimated_tokens=3500)
             result: RelevanceBatch = await structured.ainvoke([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Score these papers:\n{batch_repr}"},
             ])
         except Exception as e:
             logger.error(f"LLM batch scoring failed for batch starting at index {i}: {e}")
+            state.setdefault("errors", []).append(f"filter: batch {i} scoring failed: {e}")
             for paper in batch:
                 paper.relevance_score = 0.0
                 scored_papers.append(paper)
             continue
 
-        id_to_score = {s.id: s for s in result.scores}
+        id_to_score: dict[str, PaperScore] = {}
+        for s in result.scores:
+            if s.id in id_to_score:
+                logger.warning(f"Duplicate score for paper {s.id}; using first")
+            else:
+                id_to_score[s.id] = s
+
+        if len(id_to_score) != len(batch):
+            missing = [p.id for p in batch if p.id not in id_to_score]
+            logger.warning(f"LLM returned {len(id_to_score)} scores for {len(batch)} papers; missing: {missing}")
+            state.setdefault("errors", []).append(
+                f"filter: LLM returned {len(id_to_score)}/{len(batch)} scores"
+            )
+
         for paper in batch:
             if paper.id in id_to_score:
                 paper.relevance_score = id_to_score[paper.id].relevance
             else:
-                paper.relevance_score = 0.0
+                logger.warning(f"Paper {paper.id} missing from LLM scores; assigning neutral 5.0")
+                paper.relevance_score = 5.0
             scored_papers.append(paper)
 
     # 4. Keep papers with score >= 5.0

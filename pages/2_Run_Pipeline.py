@@ -60,13 +60,11 @@ with st.form("pipeline_form"):
     submitted = st.form_submit_button("▶ Run Pipeline", use_container_width=True, type="primary")
 
 if submitted:
+    st.session_state.cancel_pipeline = False
     topic_list = [t.strip() for t in topics.split(",") if t.strip()]
 
     status_placeholder = st.status("Pipeline running...", expanded=True)
     progress_bar = st.progress(0, text="Starting...")
-
-    if "cancel_pipeline" not in st.session_state:
-        st.session_state.cancel_pipeline = False
 
     cancel_col = st.columns([1, 5, 1])[1]
     with cancel_col:
@@ -92,12 +90,14 @@ if submitted:
     start = time.time()
     status_phases = ["Fetching papers...", "Filtering...", "Summarising...", "Ranking...", "Generating report..."]
 
-    with ThreadPoolExecutor() as executor:
-        future = executor.submit(run)
+    executor = ThreadPoolExecutor()
+    future = executor.submit(run)
+    try:
         phase = 0
         while not future.done():
             if st.session_state.cancel_pipeline:
                 status_placeholder.update(label="Pipeline cancelled", state="error", expanded=False)
+                executor.shutdown(wait=False)
                 st.warning("Pipeline was cancelled.")
                 st.stop()
             elapsed = int(time.time() - start)
@@ -106,8 +106,18 @@ if submitted:
             progress_bar.progress(progress, text=f"{status_phases[phase]} ({elapsed}s)")
             time.sleep(0.5)
 
-    progress_bar.progress(1.0, text="Complete!")
-    result = future.result()
+        progress_bar.progress(1.0, text="Complete!")
+        try:
+            result = future.result()
+        except ValueError as e:
+            st.error(f"Configuration error: {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"Pipeline failed: {e}")
+            st.stop()
+    finally:
+        executor.shutdown(wait=False)
+
     elapsed = time.time() - start
 
     errors = result.get("errors", [])

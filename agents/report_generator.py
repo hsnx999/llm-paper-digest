@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import os
 
@@ -66,8 +66,9 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
                     {"role": "user", "content": prompt},
                 ])
                 return response.content
-            except Exception:
-                pass
+            except Exception as retry_err:
+                logger.warning("Executive summary retry also failed: {}", retry_err)
+                e = retry_err
         logger.error(f"Executive summary generation failed: {e}")
         return (
             "This week's papers cover a range of topics in the specified areas, "
@@ -78,7 +79,7 @@ async def _generate_executive_summary(papers: list[Paper], topics: list[str], n:
 def _build_json_report(state: PipelineState, papers: list[Paper]) -> dict:
     return {
         "run_id": state["run_id"],
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "topics": state["topics"],
         "categories": state["categories"],
         "paper_count": len(papers),
@@ -143,7 +144,7 @@ def _build_markdown_report(
 
 async def report_generator_node(state: PipelineState) -> PipelineState:
     cfg = Config()
-    output_dir = cfg.OUTPUT_DIR
+    output_dir = os.path.expanduser(cfg.OUTPUT_DIR)
 
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -154,7 +155,7 @@ async def report_generator_node(state: PipelineState) -> PipelineState:
     topics: list[str] = state["topics"]
     total_fetched = len(state.get("raw_papers", []))
 
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     run_id = state["run_id"]
     run_id_short = run_id[:8]
 
@@ -174,9 +175,11 @@ async def report_generator_node(state: PipelineState) -> PipelineState:
         state, papers, start_date, end_date, total_fetched, executive_summary, trending,
     )
 
+    report_paths = {}
     try:
         with open(json_path, "w") as f:
             json.dump(json_data, f, indent=2)
+        report_paths["json"] = json_path
         logger.info(f"JSON report written to {json_path}")
     except Exception as e:
         logger.error(f"Failed to write JSON report: {e}")
@@ -184,9 +187,10 @@ async def report_generator_node(state: PipelineState) -> PipelineState:
     try:
         with open(md_path, "w") as f:
             f.write(md_content)
+        report_paths["markdown"] = md_path
         logger.info(f"Markdown report written to {md_path}")
     except Exception as e:
         logger.error(f"Failed to write Markdown report: {e}")
 
-    state["report_paths"] = {"json": json_path, "markdown": md_path}
+    state["report_paths"] = report_paths
     return state
