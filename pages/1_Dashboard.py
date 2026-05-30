@@ -42,15 +42,9 @@ def papers_from_digest(data) -> list[Paper]:
 db = Database()
 config = Config()
 
-if "search_mode" not in st.session_state:
-    st.session_state.search_mode = False
-if "search_query" not in st.session_state:
-    st.session_state.search_query = ""
-if "search_results" not in st.session_state:
-    st.session_state.search_results = None
-
-data = load_latest_digest()
-all_papers = papers_from_digest(data) if data else []
+with st.spinner("Loading digest data..."):
+    data = load_latest_digest()
+    all_papers = papers_from_digest(data) if data else []
 
 all_categories = sorted({cat for p in all_papers for cat in p.categories})
 all_dates = sorted({p.published_date.date() for p in all_papers if p.published_date})
@@ -89,34 +83,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-col_search, col_toggle = st.columns([6, 1])
-with col_search:
-    search_input = st.text_input(
-        "Search papers",
-        placeholder="Type a query and press Enter to search semantically...",
-        label_visibility="collapsed",
-    )
-with col_toggle:
-    search_mode = st.checkbox("Search Mode", value=st.session_state.search_mode)
+search_query = st.text_input(
+    "Search papers",
+    placeholder="Type a query and press Enter to search semantically...",
+    label_visibility="collapsed",
+)
 
-st.session_state.search_mode = search_mode
-
-if search_input:
-    st.session_state.search_query = search_input
-    st.session_state.search_mode = True
+if search_query:
     vs = VectorStore()
     if vs.load():
-        st.session_state.search_results = vs.search(search_input, k=10)
+        search_results = vs.search(search_query, k=10)
     else:
-        st.session_state.search_results = []
+        search_results = []
+else:
+    search_results = None
 
-if not st.session_state.search_mode:
-    st.session_state.search_results = None
-    st.session_state.search_query = ""
-
-if st.session_state.search_results is not None:
-    display_papers = st.session_state.search_results
-    header_text = f"🔍 Search Results for \"{st.session_state.search_query}\""
+if search_results is not None:
+    display_papers = search_results
+    header_text = f'🔍 Search Results for "{search_query}"'
 else:
     display_papers = all_papers
     header_text = "📄 All Papers"
@@ -137,6 +121,10 @@ for p in display_papers:
             if d < date_range[0] or d > date_range[1]:
                 continue
     filtered.append(p)
+
+if not filtered and search_results is not None and all_papers:
+    st.info("No search results match your current filters.")
+    st.stop()
 
 filtered.sort(key=lambda x: x.final_score, reverse=True)
 
@@ -177,4 +165,8 @@ for p in filtered:
             )
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.link_button("🔗 View on ArXiv", p.url, use_container_width=True)
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            st.link_button("🔗 View on ArXiv", p.url, use_container_width=True)
+        with col_btn2:
+            st.link_button("📄 View PDF", p.pdf_url, use_container_width=True)

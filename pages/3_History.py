@@ -99,16 +99,13 @@ for r in runs:
                 st.button("📥 View MD", disabled=True, use_container_width=True)
 
         with col3:
-            if st.button(f"🗑 Delete", key=f"del_{r.run_id}", use_container_width=True):
-                if r.json_path and os.path.exists(r.json_path):
-                    os.remove(r.json_path)
-                if r.md_path and os.path.exists(r.md_path):
-                    os.remove(r.md_path)
-                conn = db._get_conn()
-                try:
-                    conn.execute("DELETE FROM digest_runs WHERE run_id = ?", (r.run_id,))
-                    conn.commit()
-                finally:
-                    conn.close()
-                st.success(f"Run {r.run_id[:8]} deleted")
-                st.rerun()
+            with st.popover(f"🗑 Delete", use_container_width=True):
+                st.warning(f"Delete run {r.run_id[:8]}?")
+                if st.button("Yes, delete", key=f"confirm_del_{r.run_id}", use_container_width=True):
+                    if r.json_path and os.path.exists(r.json_path):
+                        os.remove(r.json_path)
+                    if r.md_path and os.path.exists(r.md_path):
+                        os.remove(r.md_path)
+                    db.delete_run(r.run_id)
+                    st.success(f"Run {r.run_id[:8]} deleted")
+                    st.rerun()

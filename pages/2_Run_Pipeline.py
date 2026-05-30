@@ -63,6 +63,15 @@ if submitted:
     topic_list = [t.strip() for t in topics.split(",") if t.strip()]
 
     status_placeholder = st.status("Pipeline running...", expanded=True)
+    progress_bar = st.progress(0, text="Starting...")
+
+    if "cancel_pipeline" not in st.session_state:
+        st.session_state.cancel_pipeline = False
+
+    cancel_col = st.columns([1, 5, 1])[1]
+    with cancel_col:
+        st.button("✋ Cancel", key="cancel_btn", use_container_width=True,
+                  on_click=lambda: setattr(st.session_state, "cancel_pipeline", True))
 
     def run():
         loop = asyncio.new_event_loop()
@@ -81,12 +90,23 @@ if submitted:
             loop.close()
 
     start = time.time()
+    status_phases = ["Fetching papers...", "Filtering...", "Summarising...", "Ranking...", "Generating report..."]
 
     with ThreadPoolExecutor() as executor:
         future = executor.submit(run)
+        phase = 0
         while not future.done():
+            if st.session_state.cancel_pipeline:
+                status_placeholder.update(label="Pipeline cancelled", state="error", expanded=False)
+                st.warning("Pipeline was cancelled.")
+                st.stop()
+            elapsed = int(time.time() - start)
+            phase = min(elapsed // 30, len(status_phases) - 1)
+            progress = min(elapsed / 180, 0.95)
+            progress_bar.progress(progress, text=f"{status_phases[phase]} ({elapsed}s)")
             time.sleep(0.5)
 
+    progress_bar.progress(1.0, text="Complete!")
     result = future.result()
     elapsed = time.time() - start
 
@@ -116,9 +136,11 @@ if submitted:
         for err in errors:
             st.write(f"- {err}")
 
-    if ranked:
+    filtered = result.get("filtered_papers", [])
+    papers_to_index = filtered or ranked
+    if papers_to_index:
         vs = VectorStore()
-        vs.index_papers(ranked)
+        vs.index_papers(papers_to_index)
 
     st.page_link(
         "pages/1_Dashboard.py",

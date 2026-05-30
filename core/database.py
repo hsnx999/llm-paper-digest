@@ -125,6 +125,14 @@ class Database:
         finally:
             conn.close()
 
+    def delete_run(self, run_id: str) -> None:
+        conn = self._get_conn()
+        try:
+            conn.execute("DELETE FROM digest_runs WHERE run_id = ?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
     def get_run(self, run_id: str) -> Optional[DigestRun]:
         conn = self._get_conn()
         try:
