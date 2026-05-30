@@ -35,7 +35,7 @@ State is persisted in SQLite, and results are viewable through a Streamlit UI.
 ## Quick Start
 
 ```bash
-git clone <repo-url> && cd llm-paper-digest
+git clone https://github.com/hsnx999/llm-paper-digest.git && cd llm-paper-digest
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # edit .env with your API key
