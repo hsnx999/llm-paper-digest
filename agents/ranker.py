@@ -25,10 +25,11 @@ SYSTEM_PROMPT = (
 
 
 def _build_user_prompt(paper: Paper) -> str:
+    summary_text = paper.summary if paper.summary else "Summary not available."
     return (
         f"Title: {paper.title}\n\n"
         f"Abstract: {paper.abstract}\n\n"
-        f"Summary: {paper.summary}"
+        f"Summary: {summary_text}"
     )
 
 

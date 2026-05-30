@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 from core.config import Config
 from core.database import Database
@@ -58,44 +57,37 @@ with st.form("settings_form"):
             value=config.DAYS_LOOKBACK,
         )
 
+    col3, col4 = st.columns(2)
+    with col3:
+        papers_per_run = st.number_input(
+            "Papers Per Run",
+            min_value=10,
+            max_value=200,
+            value=config.PAPERS_PER_RUN,
+        )
+    with col4:
+        log_level = st.selectbox(
+            "Log Level",
+            options=["DEBUG", "INFO", "WARNING", "ERROR"],
+            index=["DEBUG", "INFO", "WARNING", "ERROR"].index(config.LOG_LEVEL),
+        )
+
     saved = st.form_submit_button("💾 Save Settings", use_container_width=True, type="primary")
 
 if saved:
-    lines = []
-    if os.path.exists(".env"):
-        with open(".env") as f:
-            existing = f.read()
-        seen = set()
-        for line in existing.strip().split("\n"):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                lines.append(line)
-                continue
-            key = line.split("=", 1)[0].strip()
-            seen.add(key)
-        for key in seen:
-            lines = [l for l in lines if not l.startswith(key + "=")]
-    else:
-        seen = set()
-
+    from dotenv import set_key
     pairs = {
         "GROQ_API_KEY": groq_key,
         "DEFAULT_TOPICS": default_topics,
         "DEFAULT_CATEGORIES": default_categories,
         "TOP_N_PAPERS": str(top_n),
         "DAYS_LOOKBACK": str(days_lookback),
+        "PAPERS_PER_RUN": str(papers_per_run),
+        "LOG_LEVEL": log_level,
     }
-
     for key, value in pairs.items():
-        if key not in seen:
-            lines.append(f"{key}={value}")
-        else:
-            lines.append(f"{key}={value}")
-
-    with open(".env", "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-    st.success("Settings saved! Restart the app for changes to take full effect.")
+        set_key(".env", key, value)
+    st.success("Settings saved!")
     st.rerun()
 
 st.markdown("---")

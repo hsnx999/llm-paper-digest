@@ -50,8 +50,13 @@ def _compute_week_range(state: PipelineState) -> tuple[str, str]:
 
 
 async def _generate_executive_summary(papers: list[Paper], topics: list[str], n: int) -> str:
+    paper_lines = "\n".join(
+        f"- {p.title}: {p.summary.one_liner if p.summary else p.abstract[:200]}"
+        for p in papers
+    )
     prompt = (
-        f"Summarize the key themes and trends from this week's top {n} papers on {topics}. "
+        f"Summarize the key themes and trends from this week's top {n} papers on {topics}.\n\n"
+        f"Papers:\n{paper_lines}\n\n"
         "Write one paragraph (3-5 sentences). Focus on what's new, what's trending, and what's important."
     )
     try:

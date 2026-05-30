@@ -24,7 +24,7 @@ st.markdown("""
 
 def load_latest_digest():
     output_dir = Config().OUTPUT_DIR
-    pattern = os.path.join(output_dir, "*_digest_*.json")
+    pattern = os.path.join(output_dir, "digest_*.json")
     files = glob_mod.glob(pattern)
     if not files:
         return None
@@ -132,7 +132,7 @@ for p in display_papers:
     if p.final_score < min_score:
         continue
     if date_range and p.published_date:
-        if isinstance(date_range, tuple) and len(date_range) == 2:
+        if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
             d = p.published_date.date()
             if d < date_range[0] or d > date_range[1]:
                 continue
