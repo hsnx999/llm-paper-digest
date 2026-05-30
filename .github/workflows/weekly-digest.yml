@@ -1,0 +1,61 @@
+name: Weekly Digest
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      topics:
+        description: "Comma-separated topics (leave empty for defaults)"
+        required: false
+        type: string
+      categories:
+        description: "Comma-separated ArXiv categories (leave empty for defaults)"
+        required: false
+        type: string
+      days:
+        description: "Days lookback"
+        required: false
+        default: "7"
+        type: string
+      top_n:
+        description: "Number of top papers"
+        required: false
+        default: "10"
+        type: string
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env
+        run: |
+          echo "LLM_PROVIDER=groq" >> .env
+          echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> .env
+
+      - name: Run pipeline
+        run: |
+          ARGS=""
+          if [ "${{ inputs.topics }}" != "" ]; then ARGS="$ARGS --topics \"${{ inputs.topics }}\""; fi
+          if [ "${{ inputs.categories }}" != "" ]; then ARGS="$ARGS --categories \"${{ inputs.categories }}\""; fi
+          if [ "${{ inputs.days }}" != "" ]; then ARGS="$ARGS --days ${{ inputs.days }}"; fi
+          if [ "${{ inputs.top_n }}" != "" ]; then ARGS="$ARGS --top-n ${{ inputs.top_n }}"; fi
+          python main.py run $ARGS
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-report
+          path: output/
+          retention-days: 30
