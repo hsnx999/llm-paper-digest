@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+from core.models import Paper, PipelineState
+from core.config import Config
+from core.llm_provider import get_llm
+from loguru import logger
+import json
+from datetime import datetime, timedelta
+import os
+
+
+STOPWORDS = {
+    "a", "an", "the", "and", "or", "but", "if", "because", "as", "what",
+    "which", "this", "that", "these", "those", "then", "just", "so", "than",
+    "such", "both", "through", "about", "for", "is", "of", "while", "during",
+    "to", "from", "in", "on", "by", "at", "with", "without", "into", "via",
+    "using", "based", "new", "novel", "approach", "method", "model", "our",
+    "we", "it", "its", "are", "was", "were", "been", "be", "have", "has",
+    "had", "do", "does", "did", "will", "would", "can", "could", "may",
+    "might", "shall", "should", "not", "no", "nor", "only", "own", "same",
+    "very", "too", "also", "how", "when", "where", "why", "who", "whom",
+    "all", "any", "each", "few", "more", "most", "other", "some", "over",
+    "under", "above", "below", "up", "down", "out", "off", "again", "further",
+    "once", "here", "there", "every", "between", "after", "before",
+}
+
+
+def _get_trending_topics(papers: list[Paper], top_n: int = 10) -> list[tuple[str, int]]:
+    word_counts: dict[str, int] = {}
+    for paper in papers:
+        for word in paper.title.lower().split():
+            word = word.strip(".,!?;:'\"()[]{}")
+            if word and word not in STOPWORDS and len(word) > 2:
+                word_counts[word] = word_counts.get(word, 0) + 1
+    return sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+
+def _compute_week_range(state: PipelineState) -> tuple[str, str]:
+    started_at: datetime = state["started_at"]
+    days_lookback: int = state["days_lookback"]
+    end_date = started_at.strftime("%Y-%m-%d")
+    start_date = (started_at - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+    return start_date, end_date
+
+
+async def _generate_executive_summary(papers: list[Paper], topics: list[str], n: int) -> str:
+    try:
+        model = get_llm()
+        prompt = (
+            f"Summarize the key themes and trends from this week's top {n} papers on {topics}. "
+            "Write one paragraph (3-5 sentences). Focus on what's new, what's trending, and what's important."
+        )
+        response = await model.ainvoke([
+            {"role": "system", "content": "You are a research paper digest writer."},
+            {"role": "user", "content": prompt},
+        ])
+        return response.content
+    except Exception as e:
+        logger.error(f"Executive summary generation failed: {e}")
+        return (
+            "This week's papers cover a range of topics in the specified areas, "
+            "with notable contributions advancing the field."
+        )
+
+
+def _build_json_report(state: PipelineState, papers: list[Paper]) -> dict:
+    return {
+        "run_id": state["run_id"],
+        "generated_at": datetime.utcnow().isoformat(),
+        "topics": state["topics"],
+        "categories": state["categories"],
+        "paper_count": len(papers),
+        "papers": [paper.model_dump(mode="json") for paper in papers],
+    }
+
+
+def _build_markdown_report(
+    state: PipelineState,
+    papers: list[Paper],
+    start_date: str,
+    end_date: str,
+    total_fetched: int,
+    executive_summary: str,
+    trending_topics: list[tuple[str, int]],
+) -> str:
+    categories_str = ", ".join(state["categories"])
+    lines: list[str] = [
+        f"# LLM Paper Digest \u2014 Week of {start_date} to {end_date}",
+        "",
+        f"> {len(papers)} papers ranked from {total_fetched} fetched across {categories_str}.",
+        "",
+        "## Executive Summary",
+        executive_summary,
+        "",
+        "## Top Papers",
+        "",
+    ]
+    for paper in papers:
+        if not paper.summary:
+            continue
+        authors_str = ", ".join(paper.authors)
+        contributions = "\n".join(f"- {c}" for c in paper.summary.key_contributions)
+        lines.extend([
+            f"### {paper.rank}. {paper.title} `[score: {paper.final_score:.2f}]`",
+            "",
+            f"**TL;DR:** {paper.summary.one_liner}",
+            "",
+            f"**Authors:** {authors_str}",
+            "",
+            f"**ArXiv:** {paper.url}",
+            "",
+            "**Key Contributions:**",
+            contributions,
+            "",
+            f"**Methodology:** {paper.summary.methodology}",
+            "",
+            f"**Why it matters:** {paper.summary.why_it_matters}",
+            "",
+            f"**Limitations:** {paper.summary.limitations}",
+            "",
+            "---",
+            "",
+        ])
+    lines.append("## Trending Topics This Week")
+    lines.append("")
+    for word, count in trending_topics:
+        lines.append(f"- {word}: {count}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+async def report_generator_node(state: PipelineState) -> PipelineState:
+    cfg = Config()
+    output_dir = cfg.OUTPUT_DIR
+
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Failed to create output directory {output_dir}: {e}")
+
+    papers: list[Paper] = state.get("ranked_papers", [])
+    topics: list[str] = state["topics"]
+    total_fetched = len(state.get("raw_papers", []))
+
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    run_id = state["run_id"]
+    run_id_short = run_id[:8]
+
+    json_filename = f"digest_{date_str}_{run_id_short}.json"
+    md_filename = f"digest_{date_str}_{run_id_short}.md"
+
+    json_path = os.path.join(output_dir, json_filename)
+    md_path = os.path.join(output_dir, md_filename)
+
+    start_date, end_date = _compute_week_range(state)
+    trending = _get_trending_topics(papers)
+    executive_summary = await _generate_executive_summary(papers, topics, len(papers))
+
+    json_data = _build_json_report(state, papers)
+    md_content = _build_markdown_report(
+        state, papers, start_date, end_date, total_fetched, executive_summary, trending,
+    )
+
+    try:
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        logger.info(f"JSON report written to {json_path}")
+    except Exception as e:
+        logger.error(f"Failed to write JSON report: {e}")
+
+    try:
+        with open(md_path, "w") as f:
+            f.write(md_content)
+        logger.info(f"Markdown report written to {md_path}")
+    except Exception as e:
+        logger.error(f"Failed to write Markdown report: {e}")
+
+    state["report_paths"] = {"json": json_path, "markdown": md_path}
+    return state
