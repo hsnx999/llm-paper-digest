@@ -47,10 +47,10 @@ jobs:
       - name: Run pipeline
         run: |
           ARGS=""
-          if [ "${{ inputs.topics }}" != "" ]; then ARGS="$ARGS --topics \"${{ inputs.topics }}\""; fi
-          if [ "${{ inputs.categories }}" != "" ]; then ARGS="$ARGS --categories \"${{ inputs.categories }}\""; fi
-          if [ "${{ inputs.days }}" != "" ]; then ARGS="$ARGS --days ${{ inputs.days }}"; fi
-          if [ "${{ inputs.top_n }}" != "" ]; then ARGS="$ARGS --top-n ${{ inputs.top_n }}"; fi
+          if [ -n "${{ inputs.topics }}" ]; then ARGS="$ARGS --topics '${{ inputs.topics }}'"; fi
+          if [ -n "${{ inputs.categories }}" ]; then ARGS="$ARGS --categories '${{ inputs.categories }}'"; fi
+          if [ -n "${{ inputs.days }}" ]; then ARGS="$ARGS --days ${{ inputs.days }}"; fi
+          if [ -n "${{ inputs.top_n }}" ]; then ARGS="$ARGS --top-n ${{ inputs.top_n }}"; fi
           python main.py run $ARGS
 
       - name: Upload report
@@ -59,3 +59,19 @@ jobs:
           name: digest-report
           path: output/
           retention-days: 30
+
+      - name: Notify on completion
+        if: always()
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          RUN_STATUS: ${{ job.status }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "No WEBHOOK_URL set, skipping notification"
+            exit 0
+          fi
+          curl -s -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"text\": \"📄 LLM Paper Digest — Weekly Run: ${RUN_STATUS}\nView artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            }"

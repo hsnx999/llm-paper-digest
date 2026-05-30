@@ -105,6 +105,29 @@ else:
     display_papers = all_papers
     header_text = "📄 All Papers"
 
+st.markdown("### 📊 Trends")
+
+db_for_charts = Database()
+all_runs = db_for_charts.get_all_runs()
+if len(all_runs) >= 2:
+    chart_data = [
+        {"Date": r.started_at.strftime("%Y-%m-%d"), "Papers": r.paper_count}
+        for r in reversed(all_runs)
+        if r.paper_count > 0
+    ]
+    if chart_data:
+        st.line_chart(
+            chart_data,
+            x="Date",
+            y="Papers",
+            use_container_width=True,
+            height=250,
+        )
+elif len(all_runs) == 1:
+    st.caption(f"One run completed so far ({all_runs[0].paper_count} papers). More runs needed for trends.")
+else:
+    st.caption("No run data yet. Run the pipeline to see trends.")
+
 if not display_papers and not all_papers:
     st.info("No digest data found. Run the pipeline from the Run Pipeline page first.")
     st.stop()
